@@ -1,0 +1,3 @@
+[submodule "ip_repo/afc_reset"]
+	path = ip_repo/afc_reset
+	url = https://github.com/qermit/ip_core_afc_reset
