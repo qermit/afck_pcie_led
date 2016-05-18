@@ -70,6 +70,21 @@ proc AxiCdma::AxiRegisterRead {reg_base reg_offset {ret_format d4}} {
 	return ${register_val}
 }
 
+proc AxiCdma::AxiRegisterWrite {reg_base reg_offset value} {
+	variable inst_iface
+	variable addr_width
+	variable data_width
+	
+	set current_offset [format %08X [expr ${reg_base} + ${reg_offset}]]
+	set current_value  [format %08X ${value} ]
+	
+	reset_hw_axi [get_hw_axis ${inst_iface}]
+	
+	set tmp_hw_axi [create_hw_axi_txn HW_AXI_TMP [get_hw_axis ${inst_iface}]  -force -address ${current_offset} -len 1 -size ${addr_width} -type write -data ${current_value} ]
+	run_hw_axi -quiet ${tmp_hw_axi}
+	return 
+}
+
 proc AxiCdma::getRegister { reg_offset } {
 	variable CDMA_CORE_OFFSET
 	set register_val [ AxiCdma::AxiRegisterRead ${CDMA_CORE_OFFSET} ${reg_offset} b4 ] 
@@ -122,3 +137,46 @@ proc AxiCdma::simpleTransfer { srcOffst dstOffset transferSize } {
 	AxiCdma::setRegister 0x20 ${dstOffset}
 	AxiCdma::setRegister 0x28 ${transferSize}
 }
+
+proc AxiCdma::sgTransfer { srcOffst dstOffset transferSize chunkSize } {
+	variable SG_BRAM_OFFSET
+	#enable 
+	AxiCdma::setRegister 0x0 0x4	
+	AxiCdma::setRegister 0x0 0x21008	
+	
+	set parts [expr ${transferSize} / ${chunkSize} ]
+	puts "Transfer parts: ${parts}"
+	
+	set taildsc_ptr 0
+	
+	for {set i 0} { ${i} < ${parts} } { incr i } {
+		set current_sg_offset [ expr ${SG_BRAM_OFFSET} + ${i} * 0x40 ]
+		set taildsc_ptr		  [ expr ${i} * 0x40 ]
+		set next_sg_PTR 	  [ expr ${i} * 0x40 + 0x40 ] 
+		set current_srcOffset [ expr ${srcOffst} + ${chunkSize} * ${i} ]
+		set current_dstOffset [ expr ${dstOffset} + ${chunkSize} * ${i} ]
+		
+		puts [ format "Current SG offset: %08X" ${current_sg_offset} ]
+		puts [ format "Current chunk src offset: %08X" ${current_srcOffset} ]
+		puts [ format "Current chunk dst offset: %08X" ${current_dstOffset} ]
+		
+		AxiCdma::AxiRegisterWrite 	${current_sg_offset} 0x00 ${next_sg_PTR}
+		AxiCdma::AxiRegisterWrite 	${current_sg_offset} 0x08 ${current_srcOffset}
+		AxiCdma::AxiRegisterWrite 	${current_sg_offset} 0x10 ${current_dstOffset}
+		AxiCdma::AxiRegisterWrite 	${current_sg_offset} 0x18 ${chunkSize}
+		AxiCdma::AxiRegisterWrite 	${current_sg_offset} 0x1C 0
+		
+		
+	}
+	
+	AxiCdma::setRegister 0x08 0
+	AxiCdma::setRegister 0x10 ${taildsc_ptr}
+	
+	#AxiCdma::setRegister 0x18 ${srcOffst}
+	#AxiCdma::setRegister 0x20 ${dstOffset}
+	#AxiCdma::setRegister 0x28 ${transferSize}
+	
+	# set Sg first and last
+	
+}
+
